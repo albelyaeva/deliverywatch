@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/deliverywatch
+    username: postgres
+    password: postgres
+app:
+  kafka:
+    topic: delivery.order.events.v1
+    bootstrap: localhost:29092
+    streams:
+      application-id: deliverywatch-metrics
+      state-dir: /tmp/kstreams/metrics

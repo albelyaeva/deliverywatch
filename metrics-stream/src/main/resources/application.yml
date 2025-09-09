@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/deliverywatch
+    username: postgres
+    password: postgres
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/metrics
+    table: flyway_history_metrics
+    baseline-on-migrate: true
+    baseline-version: 0
+    schemas: public
+app:
+  kafka:
+    bootstrap: localhost:29092
+    input-topic: delivery.order.events.v1
+    streams:
+      application-id: deliverywatch-metrics
+      state-dir: /tmp/kstreams/metrics
+      properties:
+        commit.interval.ms: 1000
+  windows:
+    size-minutes: 1
+  alerts:
+    sla-threshold: 90.0
+
+server:
+  port: 8081

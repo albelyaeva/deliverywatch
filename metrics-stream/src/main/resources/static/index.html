@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>DeliveryWatch — Live KPI</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+        h1 { margin: 0 0 8px 0; }
+        .sub { color: #666; margin-bottom: 16px; }
+        table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; }
+        th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; font-size: 14px; }
+        th { background: #f6f6f6; }
+        .row { display: grid; gap: 24px; grid-template-columns: 1fr 1fr; }
+        @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+        .muted { color: #888; font-size: 12px; }
+    </style>
+</head>
+<body>
+<h1>DeliveryWatch — Live KPI</h1>
+<div class="sub">Обновляется каждые <b>3 секунды</b>. Эндпоинты: <code>/metrics/sla</code>, <code>/metrics/delivery-time</code>, <code>/metrics/alerts</code></div>
+
+<div class="row">
+    <div>
+        <h3>SLA (последние окна)</h3>
+        <table id="sla"><thead><tr>
+            <th>Окно</th><th>Город</th><th>SLA %</th>
+        </tr></thead><tbody></tbody></table>
+        <div class="muted">Источник: <code>GET /metrics/sla?limit=20</code></div>
+    </div>
+
+    <div>
+        <h3>Время доставки (последние окна)</h3>
+        <table id="dt"><thead><tr>
+            <th>Окно</th><th>Город</th><th>avg, сек</th><th>p95, сек</th>
+        </tr></thead><tbody></tbody></table>
+        <div class="muted">Источник: <code>GET /metrics/delivery-time?limit=20</code></div>
+    </div>
+</div>
+
+<div>
+    <h3>Алерты</h3>
+    <table id="alerts"><thead><tr>
+        <th>Время</th><th>Тип</th><th>Город</th><th>Значение</th><th>Детали</th>
+    </tr></thead><tbody></tbody></table>
+    <div class="muted">Источник: <code>GET /metrics/alerts?limit=50</code></div>
+</div>
+
+<script>
+    async function fetchJSON(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(path + " -> " + res.status);
+      return res.json();
+    }
+
+    function fmtWindow(s, e) {
+      const st = new Date(s).toLocaleTimeString();
+      const en = new Date(e).toLocaleTimeString();
+      return `${st} – ${en}`;
+    }
+
+    function setRows(tblId, rows, cols) {
+      const tbody = document.querySelector(`#${tblId} tbody`);
+      tbody.innerHTML = "";
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        cols.forEach(c => {
+          const td = document.createElement("td");
+          td.textContent = c(r);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function refresh() {
+      try {
+        const [sla, dt, alerts] = await Promise.all([
+          fetchJSON("/metrics/sla?limit=20"),
+          fetchJSON("/metrics/delivery-time?limit=20"),
+          fetchJSON("/metrics/alerts?limit=50"),
+        ]);
+
+        setRows("sla", sla, [
+          r => fmtWindow(r.windowStart, r.windowEnd),
+          r => r.city,
+          r => (r.slaPercent ?? 0).toFixed(2)
+        ]);
+
+        setRows("dt", dt, [
+          r => fmtWindow(r.windowStart, r.windowEnd),
+          r => r.city,
+          r => r.avgSeconds,
+          r => r.p95Seconds
+        ]);
+
+        setRows("alerts", alerts, [
+          r => new Date(r.ts).toLocaleTimeString(),
+          r => r.kind,
+          r => r.city ?? "—",
+          r => r.value ?? "—",
+          r => r.details ?? ""
+        ]);
+
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    refresh();
+    setInterval(refresh, 3000);
+</script>
+</body>
+</html>
