@@ -1,8 +1,8 @@
 package com.example.metricsstream.repository;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -17,22 +17,42 @@ public class MetricsReadRepository {
     public record TimeRow(Instant windowStart, Instant windowEnd, String city, int p95Seconds, int avgSeconds) {}
     public record AlertRow(long id, Instant ts, String kind, String city, Double value, String details) {}
 
-    public List<SlaRow> findSla(String city, int limit) {
-        String sql = """
-            select window_start as windowStart, window_end as windowEnd, city, sla_percent as slaPercent
-            from kpi_sla
-            where (:city is null or city = :city)
-            order by window_end desc
-            limit :limit
-        """;
+    // Создаем кастомные RowMapper'ы для records
+    private static final RowMapper<SlaRow> SLA_ROW_MAPPER = (rs, rowNum) ->
+            new SlaRow(
+                    rs.getTimestamp("windowStart").toInstant(),
+                    rs.getTimestamp("windowEnd").toInstant(),
+                    rs.getString("city"),
+                    rs.getDouble("slaPercent")
+            );
 
+    private static final RowMapper<TimeRow> TIME_ROW_MAPPER = (rs, rowNum) ->
+            new TimeRow(
+                    rs.getTimestamp("windowStart").toInstant(),
+                    rs.getTimestamp("windowEnd").toInstant(),
+                    rs.getString("city"),
+                    rs.getInt("p95Seconds"),
+                    rs.getInt("avgSeconds")
+            );
+
+    private static final RowMapper<AlertRow> ALERT_ROW_MAPPER = (rs, rowNum) ->
+            new AlertRow(
+                    rs.getLong("id"),
+                    rs.getTimestamp("ts").toInstant(),
+                    rs.getString("kind"),
+                    rs.getString("city"),
+                    (Double) rs.getObject("value"),
+                    rs.getString("details")
+            );
+
+    public List<SlaRow> findSla(String city, int limit) {
         if (city == null) {
             return jdbc.query("""
                 select window_start as windowStart, window_end as windowEnd, city, sla_percent as slaPercent
                 from kpi_sla
                 order by window_end desc
                 limit ?
-            """, new BeanPropertyRowMapper<>(SlaRow.class), limit);
+            """, SLA_ROW_MAPPER, limit);
         }
         return jdbc.query("""
             select window_start as windowStart, window_end as windowEnd, city, sla_percent as slaPercent
@@ -40,7 +60,7 @@ public class MetricsReadRepository {
             where city = ?
             order by window_end desc
             limit ?
-        """, new BeanPropertyRowMapper<>(SlaRow.class), city, limit);
+        """, SLA_ROW_MAPPER, city, limit);
     }
 
     public List<TimeRow> findDeliveryTime(String city, int limit) {
@@ -50,7 +70,7 @@ public class MetricsReadRepository {
                 from kpi_delivery_time
                 order by window_end desc
                 limit ?
-            """, new BeanPropertyRowMapper<>(TimeRow.class), limit);
+            """, TIME_ROW_MAPPER, limit);
         }
         return jdbc.query("""
             select window_start as windowStart, window_end as windowEnd, city, p95_seconds as p95Seconds, avg_seconds as avgSeconds
@@ -58,7 +78,7 @@ public class MetricsReadRepository {
             where city = ?
             order by window_end desc
             limit ?
-        """, new BeanPropertyRowMapper<>(TimeRow.class), city, limit);
+        """, TIME_ROW_MAPPER, city, limit);
     }
 
     public List<AlertRow> findRecentAlerts(int limit) {
@@ -67,6 +87,6 @@ public class MetricsReadRepository {
             from alert_anomalies
             order by ts desc
             limit ?
-        """, new BeanPropertyRowMapper<>(AlertRow.class), limit);
+        """, ALERT_ROW_MAPPER, limit);
     }
 }

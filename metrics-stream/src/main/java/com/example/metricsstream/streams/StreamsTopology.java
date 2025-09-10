@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerde;
+import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -55,9 +56,29 @@ public class StreamsTopology {
             Instant promisedAt,
             Instant eventTime,
             Double price
-    ) {}
+    ) {
+    }
 
-    private record CitySec(String city, Long seconds) {}
+    private record CitySec(String city, Long seconds) {
+    }
+
+    public static record Agg(long count, long sum, long max) {
+        public Agg() {
+            this(0, 0, 0);
+        }
+
+        public Agg add(long sec) {
+            return new Agg(count + 1, sum + sec, Math.max(max, sec));
+        }
+
+        public double avg() {
+            return count == 0 ? 0 : (double) sum / count;
+        }
+
+        public int p95() {
+            return (int) max;
+        }
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule())
@@ -67,7 +88,9 @@ public class StreamsTopology {
     public KafkaStreams kafkaStreams() {
         StreamsBuilder builder = new StreamsBuilder();
 
+        // Создаем serdes
         Serde<String> stringSerde = Serdes.String();
+        Serde<OrderEvt> orderEvtSerde = createOrderEvtSerde();
 
         KStream<String, String> raw = builder.stream(inputTopic, Consumed.with(stringSerde, stringSerde));
 
@@ -82,7 +105,7 @@ public class StreamsTopology {
                     }
                 })
                 .filter((k, e) -> e != null)
-                // ставим ключом orderId (если он есть)
+                // Используем правильный serde для repartitioning
                 .selectKey((k, e) -> e.orderId() != null ? e.orderId() : k)
                 .peek((k, e) -> log.info("STREAM PARSED key={} type={} status={} city={}", k, e.eventType(), e.status(), e.city()));
 
@@ -142,31 +165,23 @@ public class StreamsTopology {
                             if (createdAtMs == null) return new CitySec(delivered.city(), null);
                             long seconds = Math.max(0, (delivered.eventTime().toEpochMilli() - createdAtMs) / 1000);
                             return new CitySec(delivered.city(), seconds);
-                        })
+                        },
+                        Joined.with(stringSerde, orderEvtSerde, Serdes.Long())) // ДОБАВЛЕНО!
                 .filter((k, citySec) -> citySec != null && citySec.seconds != null)
                 .map((orderId, citySec) -> KeyValue.pair(citySec.city, citySec.seconds));
 
         TimeWindowedKStream<String, Long> winDur =
                 durationsByCity.groupByKey(Grouped.with(Serdes.String(), Serdes.Long()))
                         .windowedBy(windows);
-        // простой агрегатор статистики
-        var statsSerde = Serdes.String(); // не нужен кастомный serde — будем писать в БД из foreach
-        var aggSerde = new JsonSerde<>(Agg.class);
-        aggSerde.deserializer().configure(Map.of(
-                JsonDeserializer.TRUSTED_PACKAGES, "*"
-        ), false);
+
+        // Правильно настроенный serde для агрегации
+        var aggSerde = createAggSerde();
 
         KTable<Windowed<String>, Agg> stats = winDur.aggregate(
                 Agg::new,
                 (city, seconds, agg) -> agg.add(seconds),
-                Materialized.with(Serdes.String(), aggSerde)   // <-- важно!
+                Materialized.with(Serdes.String(), aggSerde)
         );
-
-        KTable<Windowed<String>, Long> sumSeconds =
-                winDur.reduce(Long::sum, Materialized.with(Serdes.String(), Serdes.Long()));
-
-        KTable<Windowed<String>, Long> cnt =
-                winDur.count(Materialized.with(Serdes.String(), Serdes.Long()));
 
         stats.toStream().foreach((winCity, st) -> {
             if (st == null) return;
@@ -186,34 +201,35 @@ public class StreamsTopology {
         return streams;
     }
 
-    // простой агрегатор для p95/avg
-    static class Agg {
-        long count;
-        long sum;
-        // грубая p95 без хранения всего — можно заменить на TDigest или хистограмму
-        long max; // временно; если нужен честный p95 — соберите гистограмму
+    private Serde<OrderEvt> createOrderEvtSerde() {
+        JsonSerde<OrderEvt> serde = new JsonSerde<>(OrderEvt.class);
+        Map<String, Object> config = Map.of(
+                JsonDeserializer.TRUSTED_PACKAGES, "*"
+        );
+        serde.configure(config, false);
+        return serde;
+    }
 
-        Agg add(long sec) {
-            count++;
-            sum += sec;
-            if (sec > max) max = sec;
-            return this;
-        }
-        double avg() { return count == 0 ? 0 : (double) sum / count; }
-        int p95() { return (int) max; } // упрощённо: возьмём максимум как суррогат p95 для демо
+    private Serde<Agg> createAggSerde() {
+        JsonSerde<Agg> serde = new JsonSerde<>(Agg.class);
+        Map<String, Object> config = Map.of(
+                JsonDeserializer.TRUSTED_PACKAGES, "*",
+                JsonSerializer.ADD_TYPE_INFO_HEADERS, false
+        );
+        serde.configure(config, false);
+        return serde;
     }
 
     private Map<String, Object> streamsProps() {
         Map<String, Object> props = new HashMap<>();
-        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, org.apache.kafka.common.serialization.Serdes.StringSerde.class);
-        props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, org.apache.kafka.common.serialization.Serdes.StringSerde.class);
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "deliverywatch-metrics");
+        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
+        props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "deliverywatch-metrics-v4"); // Изменил версию
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
         props.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.AT_LEAST_ONCE);
-        props.put(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kstreams/metrics");
+        props.put(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kstreams/metrics-v4"); // Новый путь
         props.put(StreamsConfig.DEFAULT_DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG,
                 "org.apache.kafka.streams.errors.LogAndContinueExceptionHandler");
-        // читать с «начала», если стейт пустой
         props.put("auto.offset.reset", "earliest");
         return props;
     }
