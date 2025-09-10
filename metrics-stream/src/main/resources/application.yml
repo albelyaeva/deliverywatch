@@ -10,15 +10,16 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     schemas: public
-app:
   kafka:
-    bootstrap: localhost:29092
-    input-topic: delivery.order.events.v1
+    bootstrap-servers: localhost:29092
     streams:
       application-id: deliverywatch-metrics
-      state-dir: /tmp/kstreams/metrics
+      state-dir: /tmp/kstreams/${spring.kafka.streams.application-id}-${HOSTNAME}
       properties:
-        commit.interval.ms: 1000
+        commit.interval.ms: 10000
+app:
+  kafka:
+    input-topic: delivery.order.events.v1
   windows:
     size-minutes: 1
   alerts:

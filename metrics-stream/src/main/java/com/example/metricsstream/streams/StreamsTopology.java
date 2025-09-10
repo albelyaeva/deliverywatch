@@ -27,7 +27,7 @@ public class StreamsTopology {
 
     private final MetricsWriter writer;
 
-    @Value("${app.kafka.bootstrap}")
+    @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrap;
 
     @Value("${app.kafka.input-topic}")

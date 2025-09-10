@@ -6,6 +6,7 @@ import lombok.*;
 
 
 import java.time.Instant;
+import java.util.UUID;
 
 
 @Entity
@@ -17,7 +18,7 @@ public class OrderStatusHistory {
 
 
     @Column(name = "order_id", nullable = false)
-    private java.util.UUID orderId;
+    private UUID orderId;
 
 
     @Enumerated(EnumType.STRING)

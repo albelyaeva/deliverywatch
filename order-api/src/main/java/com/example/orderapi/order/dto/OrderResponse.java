@@ -7,8 +7,8 @@ import java.util.UUID;
 
 public record OrderResponse(
         UUID id,
-        UUID customerId,
-        UUID courierId,
+        String customerId,
+        String courierId,
         String city,
         OrderStatus status,
         BigDecimal price,
@@ -16,3 +16,4 @@ public record OrderResponse(
         Instant promisedAt,
         Instant updatedAt
 ) {}
+

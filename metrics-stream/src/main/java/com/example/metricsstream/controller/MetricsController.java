@@ -15,23 +15,23 @@ public class MetricsController {
 
     @GetMapping("sla")
     public List<MetricsReadRepository.SlaRow> getSla(
-            @RequestParam(required = false) String city,
-            @RequestParam(defaultValue = "50") int limit
+            @RequestParam(name = "city", required = false) String city,
+            @RequestParam(name = "limit", defaultValue = "50") int limit
     ) {
         return repo.findSla(city, limit);
     }
 
     @GetMapping("delivery-time")
     public List<MetricsReadRepository.TimeRow> getDeliveryTime(
-            @RequestParam(required = false) String city,
-            @RequestParam(defaultValue = "50") int limit
+            @RequestParam(name = "city", required = false) String city,
+            @RequestParam(name = "limit", defaultValue = "50") int limit
     ) {
         return repo.findDeliveryTime(city, limit);
     }
 
     @GetMapping("alerts")
     public List<MetricsReadRepository.AlertRow> getAlerts(
-            @RequestParam(defaultValue = "50") int limit
+            @RequestParam(name = "limit", defaultValue = "50") int limit
     ) {
         return repo.findRecentAlerts(limit);
     }
