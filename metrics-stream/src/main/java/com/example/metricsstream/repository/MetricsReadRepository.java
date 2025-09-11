@@ -17,7 +17,6 @@ public class MetricsReadRepository {
     public record TimeRow(Instant windowStart, Instant windowEnd, String city, int p95Seconds, int avgSeconds) {}
     public record AlertRow(long id, Instant ts, String kind, String city, Double value, String details) {}
 
-    // Создаем кастомные RowMapper'ы для records
     private static final RowMapper<SlaRow> SLA_ROW_MAPPER = (rs, rowNum) ->
             new SlaRow(
                     rs.getTimestamp("windowStart").toInstant(),

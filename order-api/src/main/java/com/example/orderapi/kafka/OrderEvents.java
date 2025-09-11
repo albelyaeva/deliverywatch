@@ -3,13 +3,11 @@ package com.example.orderapi.kafka;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.SendResult;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Component;
-
-import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Component
@@ -22,24 +20,25 @@ public class OrderEvents {
     @Value("${app.kafka.topic:orders}")
     private String topic;
 
-    public void publish(Object event, String key) {
+    @Retryable(maxAttempts = 3, backoff = @Backoff(delay = 1000))
+    public void publishWithRetry(Object event, String key) {
         try {
             String payload = mapper.writeValueAsString(event);
 
-            CompletableFuture<SendResult<String, String>> future = kafka.send(topic, key, payload);
+            var future = kafka.send(topic, key, payload);
+            var result = future.get(); // Блокируем для retry логики
 
-            future.whenComplete((sr, ex) -> {
-                if (ex != null) {
-                    log.error("KAFKA PUBLISH FAILED topic={} key={} err={}", topic, key, ex.toString());
-                } else {
-                    RecordMetadata rm = sr.getRecordMetadata();
-                    log.info("PUBLISHED topic={} key={} partition={} offset={}",
-                            topic, key, rm.partition(), rm.offset());
-                }
-            });
+            var metadata = result.getRecordMetadata();
+            log.info("PUBLISHED topic={} key={} partition={} offset={}",
+                    topic, key, metadata.partition(), metadata.offset());
 
         } catch (Exception e) {
-            log.error("Kafka serialize failed", e);
+            log.error("Failed to publish event: key={}", key, e);
+            throw new RuntimeException("Event publishing failed", e);
         }
+    }
+
+    public void publish(Object event, String key) {
+        publishWithRetry(event, key);
     }
 }

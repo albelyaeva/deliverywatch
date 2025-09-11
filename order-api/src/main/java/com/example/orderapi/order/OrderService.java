@@ -1,28 +1,28 @@
 package com.example.orderapi.order;
 
-import com.example.orderapi.events.OrderEvent;
-import com.example.orderapi.kafka.OrderEvents;
 import com.example.orderapi.order.dto.OrderCreateRequest;
 import com.example.orderapi.order.dto.OrderStatusChangeRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
     private final OrderRepository repo;
     private final OrderStatusHistoryRepository histRepo;
-    private final OrderEvents events;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public Order create(OrderCreateRequest req) {
         var now = Instant.now();
-        var o = Order.builder()
+        var order = Order.builder()
                 .customerId(String.valueOf(req.customerId()))
                 .city(req.city())
                 .price(req.price())
@@ -31,37 +31,31 @@ public class OrderService {
                 .updatedAt(now)
                 .promisedAt(req.promisedAt())
                 .build();
-        o = repo.save(o);
+
+        order = repo.save(order);
+
         histRepo.save(OrderStatusHistory.builder()
-                .orderId(o.getId())
+                .orderId(order.getId())
                 .status(OrderStatus.PLACED)
                 .eventTime(now)
                 .build());
 
-        events.publish(new OrderEvent(
-                "delivery.order.events.v1",
-                "ORDER_CREATED",
-                o.getId().toString(),
-                o.getStatus().name(),
-                o.getCustomerId(),
-                o.getCourierId(),
-                o.getCity(),
-                o.getCreatedAt(),
-                o.getPromisedAt(),
-                now,
-                o.getPrice()
-        ), o.getId().toString());
+        order.setEventType("ORDER_CREATED");
+        eventPublisher.publishEvent(order);
 
-        return o;
+        log.info("Order created: id={}, city={}, status={}", order.getId(), order.getCity(), order.getStatus());
+        return order;
     }
 
     @Transactional
     public Order changeStatus(UUID orderId, OrderStatusChangeRequest req) {
-        var o = repo.findById(orderId).orElseThrow();
-        o.setStatus(req.status());
-        o.setUpdatedAt(Instant.now());
+        var order = repo.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
 
-        var saved = repo.save(o);
+        order.setStatus(req.status());
+        order.setUpdatedAt(Instant.now());
+
+        var saved = repo.save(order);
 
         histRepo.save(OrderStatusHistory.builder()
                 .orderId(saved.getId())
@@ -69,20 +63,11 @@ public class OrderService {
                 .eventTime(saved.getUpdatedAt())
                 .build());
 
-        events.publish(new OrderEvent(
-                "delivery.order.events.v1",
-                "STATUS_CHANGED",
-                o.getId().toString(),
-                o.getStatus().name(),
-                o.getCustomerId(),
-                o.getCourierId(),
-                o.getCity(),
-                o.getCreatedAt(),
-                o.getPromisedAt(),
-                saved.getUpdatedAt(),
-                o.getPrice()
-        ), o.getId().toString());
+        // Добавляем метаданные для типа события
+        saved.setEventType("STATUS_CHANGED");
+        eventPublisher.publishEvent(saved);
 
+        log.info("Order status changed: id={}, status={}", orderId, req.status());
         return saved;
     }
 }

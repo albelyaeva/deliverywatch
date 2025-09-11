@@ -32,4 +32,7 @@ public class Order {
     private Instant createdAt;
     private Instant updatedAt;
     private Instant promisedAt;
+
+    @Transient
+    private String eventType;
 }

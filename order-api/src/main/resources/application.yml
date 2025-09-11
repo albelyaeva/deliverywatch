@@ -29,8 +29,6 @@ spring:
   kafka:
     bootstrap-servers: localhost:29092
 
-
-
 app:
   kafka:
     topic: delivery.order.events.v1
