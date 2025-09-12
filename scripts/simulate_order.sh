@@ -1,35 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ORDER_API="${ORDER_API:-http://localhost:8080}"
-CITY="${CITY:-Berlin}"
-PRICE="${PRICE:-19.90}"
-PROMISED_AT="$(date -u -v+3M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || gdate -u -d '+3 min' +"%Y-%m-%dT%H:%M:%SZ")"
+BASE_URL="http://localhost:8080"
+METRICS_URL="http://localhost:8081"
 
-CUSTOMER_ID="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
-echo "Creating order in city=${CITY}, promisedAt=${PROMISED_AT}"
+for city in Berlin Munich Hamburg Frankfurt; do
+  echo "Creating orders for $city..."
 
-CREATE_PAYLOAD=$(cat <<JSON
-{ "customerId": "${CUSTOMER_ID}", "city": "${CITY}", "price": ${PRICE}, "promisedAt": "${PROMISED_AT}" }
-JSON
-)
+  for i in {1..5}; do
+    price=$((RANDOM % 40 + 15))
+    promised_at="$(date -u -v+30M +'%Y-%m-%dT%H:%M:%SZ')"   # macOS/BSD date
+    customer_id="$(uuidgen)"
 
-ORDER_ID=$(curl -sS -X POST "${ORDER_API}/orders" \
-  -H "Content-Type: application/json" \
-  -d "${CREATE_PAYLOAD}" | jq -r '.id')
+    # Build JSON safely with jq
+    payload="$(jq -n \
+      --arg customerId "$customer_id" \
+      --arg city "$city" \
+      --arg promisedAt "$promised_at" \
+      --argjson price "$price" \
+      '{customerId:$customerId, city:$city, price:$price, promisedAt:$promisedAt}')"
 
-echo "Order created: ${ORDER_ID}"
+    ORDER_JSON="$(curl -sS -X POST "$BASE_URL/orders" \
+      -H "Content-Type: application/json" \
+      -d "$payload")"
 
-status() {
-  curl -sS -X POST "${ORDER_API}/orders/${ORDER_ID}/status" \
-    -H "Content-Type: application/json" \
-    -d "{ \"status\": \"$1\" }" > /dev/null
-  echo " -> $1"
-}
+    ORDER_ID="$(echo "$ORDER_JSON" | jq -r '.id')"
 
-sleep 2; status "CONFIRMED"
-sleep 5; status "PREPARING"
-sleep 5; status "PICKED_UP"
-sleep 8; status "DELIVERED"
+    sleep $((RANDOM % 3 + 1))
+
+    curl -sS -X POST "$BASE_URL/orders/$ORDER_ID/status" \
+      -H "Content-Type: application/json" \
+      -d '{"status":"DELIVERED"}' >/dev/null
+
+    echo "$city order $i completed"
+  done
+done
+
+echo "Waiting for metrics processing..."
+sleep 10
+
+curl -sS "$METRICS_URL/metrics/sla" | jq
+curl -sS "$METRICS_URL/metrics/delivery-time" | jq
 
 echo "Done."

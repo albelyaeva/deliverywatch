@@ -65,7 +65,7 @@ public class StreamsTopology {
     }
 
     public static record Agg(long count, long sum, long[] samples) {
-        private static final int MAX_SAMPLES = 1000; // Ограничиваем размер для памяти
+        private static final int MAX_SAMPLES = 1000;
         private static final Random RANDOM = new Random();
 
         public Agg() {

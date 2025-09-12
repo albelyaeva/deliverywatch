@@ -63,7 +63,6 @@ public class OrderService {
                 .eventTime(saved.getUpdatedAt())
                 .build());
 
-        // Добавляем метаданные для типа события
         saved.setEventType("STATUS_CHANGED");
         eventPublisher.publishEvent(saved);
 

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeliveryWatch - Real-time Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2rem;
+            font-weight: 600;
+        }
+
+        .status {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #27ae60;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+        }
+
+        .card h3 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            margin: 20px 0;
+            padding: 10px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid #e1e8ed;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e1e8ed;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .alert {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-weight: 500;
+            color: #495057;
+        }
+
+        select, input {
+            padding: 0.5rem 1rem;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            background: white;
+            font-size: 0.9rem;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>DeliveryWatch Analytics</h1>
+    <div class="status">
+        <div class="status-item">
+            <div class="status-dot"></div>
+            <span>Live Data</span>
+        </div>
+        <div class="status-item">
+            <span id="lastUpdate">Last updated: Never</span>
+        </div>
+        <div class="status-item">
+            <span id="dataPoints">Data points: 0</span>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="controls">
+        <div class="control-group">
+            <label for="cityFilter">Filter by City:</label>
+            <select id="cityFilter">
+                <option value="">All Cities</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="refreshInterval">Auto Refresh:</label>
+            <select id="refreshInterval">
+                <option value="0">Off</option>
+                <option value="10000">10 seconds</option>
+                <option value="30000" selected>30 seconds</option>
+                <option value="60000">1 minute</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button onclick="refreshData()">Refresh Now</button>
+        </div>
+    </div>
+
+    <div id="alerts"></div>
+
+    <div class="metrics-grid">
+        <div class="card">
+            <h3>SLA Performance</h3>
+            <div class="chart-container">
+                <canvas id="slaChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Delivery Times</h3>
+            <div class="chart-container">
+                <canvas id="deliveryChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>City Performance Summary</h3>
+            <div class="table-container">
+                <table id="cityTable">
+                    <thead>
+                    <tr>
+                        <th>City</th>
+                        <th>Latest SLA %</th>
+                        <th>Avg Delivery (min)</th>
+                        <th>P95 (min)</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Recent Alerts</h3>
+            <div class="table-container">
+                <table id="alertsTable">
+                    <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>City</th>
+                        <th>Value</th>
+                        <th>Details</th>
+                    </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Configuration
+    const API_BASE = 'http://localhost:8081/metrics';
+    let charts = {};
+    let refreshTimer = null;
+    let lastUpdateTime = null;
+
+    // Initialize charts
+    function initCharts() {
+        // SLA Chart
+        const slaCtx = document.getElementById('slaChart').getContext('2d');
+        charts.sla = new Chart(slaCtx, {
+      type: 'line',
+      data: {
+          labels: [],
+          datasets: []
+      },
+      options: {
+          responsive: true,
+          maintainAspectRatio: false,
+    layout: {
+        padding: {
+            top: 40,
+            right: 30,
+            bottom: 30,
+            left: 30
+        }
+    },
+    plugins: {
+        legend: {
+            position: 'top',
+            labels: {
+                padding: 20
+            }
+        }
+    },
+            }
+        });
+
+        // Delivery Time Chart
+        const deliveryCtx = document.getElementById('deliveryChart').getContext('2d');
+        charts.delivery = new Chart(deliveryCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Average (min)',
+                    data: [],
+                    backgroundColor: 'rgba(102, 126, 234, 0.6)',
+                    borderColor: 'rgba(102, 126, 234, 1)',
+                    borderWidth: 1
+                }, {
+                    label: 'P95 (min)',
+                    data: [],
+                    backgroundColor: 'rgba(118, 75, 162, 0.6)',
+                    borderColor: 'rgba(118, 75, 162, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 1,
+                        min: 0,
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time Window'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // API calls
+    async function fetchSLA(city = '', limit = 20) {
+        const params = new URLSearchParams({ limit });
+        if (city) params.append('city', city);
+
+        const response = await fetch(`${API_BASE}/sla?${params}`);
+        if (!response.ok) throw new Error(`SLA API error: ${response.status}`);
+        return response.json();
+    }
+
+    async function fetchDeliveryTime(city = '', limit = 20) {
+        const params = new URLSearchParams({ limit });
+        if (city) params.append('city', city);
+
+        const response = await fetch(`${API_BASE}/delivery-time?${params}`);
+        if (!response.ok) throw new Error(`Delivery Time API error: ${response.status}`);
+        return response.json();
+    }
+
+    async function fetchAlerts(limit = 10) {
+        const response = await fetch(`${API_BASE}/alerts?limit=${limit}`);
+        if (!response.ok) throw new Error(`Alerts API error: ${response.status}`);
+        return response.json();
+    }
+
+    // Update charts
+    function updateSLAChart(data) {
+        const cityData = {};
+
+        data.forEach(item => {
+            if (!cityData[item.city]) {
+                cityData[item.city] = { labels: [], data: [] };
+            }
+            const timeLabel = new Date(item.windowEnd).toLocaleTimeString();
+          cityData[item.city].labels.unshift(timeLabel);
+          cityData[item.city].data.unshift(item.slaPercent);
+        });
+
+        const datasets = Object.keys(cityData).map((city, index) => ({
+            label: city,
+            data: cityData[city].data.slice(0, 10),
+            borderColor: `hsl(${index * 137.5 % 360}, 70%, 50%)`,
+            backgroundColor: `hsl(${index * 137.5 % 360}, 70%, 50%, 0.1)`,
+            tension: 0.4
+        }));
+
+      const firstCityData = Object.values(cityData)[0];
+      let labels = [];
+      if (firstCityData && firstCityData.labels) {
+          labels = [...firstCityData.labels.slice(0, 10)].reverse();
+      }
+      charts.sla.data.labels = labels;
+      charts.sla.data.datasets = datasets;
+      charts.sla.update();
+    }
+
+    function updateDeliveryChart(data) {
+        const cityData = {};
+
+        data.forEach(item => {
+            if (!cityData[item.city]) {
+                cityData[item.city] = { avg: [], p95: [] };
+            }
+            cityData[item.city].avg.push(Math.round(item.avgSeconds / 60));
+            cityData[item.city].p95.push(Math.round(item.p95Seconds / 60));
+        });
+
+        const cities = Object.keys(cityData);
+    const avgData = cities.map(city => {
+        const avgMinutes = cityData[city].avg.length > 0 ?
+            cityData[city].avg.reduce((a, b) => a + b) / cityData[city].avg.length : 0;
+        return Math.max(avgMinutes, 0.1);
+    });
+    const p95Data = cities.map(city => {
+        const p95Minutes = cityData[city].p95.length > 0 ?
+            cityData[city].p95.reduce((a, b) => a + b) / cityData[city].p95.length : 0;
+        return Math.max(p95Minutes, 0.1);
+    });
+
+        charts.delivery.data.labels = cities;
+        charts.delivery.data.datasets[0].data = avgData;
+        charts.delivery.data.datasets[1].data = p95Data;
+        charts.delivery.update();
+    }
+
+    // Update tables
+    function updateCityTable(slaData, deliveryData) {
+        const tbody = document.querySelector('#cityTable tbody');
+        const cityStats = {};
+
+        // Process SLA data
+        slaData.forEach(item => {
+            if (!cityStats[item.city] || new Date(item.windowEnd) > new Date(cityStats[item.city].lastUpdate)) {
+                cityStats[item.city] = {
+                    sla: item.slaPercent,
+                    lastUpdate: item.windowEnd
+                };
+            }
+        });
+
+        // Process delivery data
+    deliveryData.forEach(item => {
+        if (!cityStats[item.city]) {
+            cityStats[item.city] = {}; // Создаем запись если нет
+        }
+        cityStats[item.city].avgMinutes = Math.round(item.avgSeconds / 60 * 100) / 100;
+        cityStats[item.city].p95Minutes = Math.round(item.p95Seconds / 60 * 100) / 100;
+    });
+
+        // Build table rows
+        tbody.innerHTML = Object.keys(cityStats).map(city => {
+            const stats = cityStats[city];
+            const slaStatus = stats.sla >= 90 ? '✅ Good' : '⚠️ Poor';
+            return `
+                <tr>
+                    <td><strong>${city}</strong></td>
+                    <td>${stats.sla?.toFixed(1) || 'N/A'}%</td>
+                    <td>${stats.avgMinutes || 'N/A'}</td>
+                    <td>${stats.p95Minutes || 'N/A'}</td>
+                    <td>${slaStatus}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function updateAlertsTable(data) {
+        const tbody = document.querySelector('#alertsTable tbody');
+        tbody.innerHTML = data.map(alert => `
+            <tr>
+                <td>${new Date(alert.ts).toLocaleString()}</td>
+                <td><span style="color: #dc3545; font-weight: bold;">${alert.kind}</span></td>
+                <td>${alert.city || 'N/A'}</td>
+                <td>${alert.value?.toFixed(1) || 'N/A'}</td>
+                <td>${alert.details || ''}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Update city filter
+    function updateCityFilter(data) {
+        const select = document.getElementById('cityFilter');
+        const cities = [...new Set(data.map(item => item.city))].sort();
+        const currentValue = select.value;
+
+        select.innerHTML = '<option value="">All Cities</option>' +
+            cities.map(city => `<option value="${city}">${city}</option>`).join('');
+
+        if (cities.includes(currentValue)) {
+            select.value = currentValue;
+        }
+    }
+
+    // Show error
+    function showError(message) {
+        const alertsDiv = document.getElementById('alerts');
+        alertsDiv.innerHTML = `<div class="error">Error: ${message}</div>`;
+    }
+
+    // Set up auto-refresh
+    function setupAutoRefresh() {
+        const select = document.getElementById('refreshInterval');
+
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+        }
+
+        const interval = parseInt(select.value);
+        if (interval > 0) {
+            refreshTimer = setInterval(refreshData, interval);
+        }
+    }
+
+      // Main refresh function
+    async function refreshData() {
+        try {
+            const city = document.getElementById('cityFilter').value;
+
+            // Show loading state
+            document.getElementById('lastUpdate').innerHTML =
+                'Last updated: <span class="loading"></span>';
+
+            // Fetch all data
+            const [slaData, deliveryData, alertsData] = await Promise.all([
+                fetchSLA(city),
+                fetchDeliveryTime(city),
+                fetchAlerts()
+            ]);
+
+            // Update UI
+            updateSLAChart(slaData);
+            updateDeliveryChart(deliveryData);
+            updateCityTable(slaData, deliveryData);
+            updateAlertsTable(alertsData);
+
+            if (!city) {
+                updateCityFilter([...slaData, ...deliveryData]);
+            }
+
+            // Update status
+            lastUpdateTime = new Date();
+            document.getElementById('lastUpdate').textContent =
+                `Last updated: ${lastUpdateTime.toLocaleTimeString()}`;
+            document.getElementById('dataPoints').textContent =
+                `Data points: ${slaData.length + deliveryData.length}`;
+
+            // Clear any error messages
+            document.getElementById('alerts').innerHTML = '';
+
+        } catch (error) {
+            console.error('Error refreshing data:', error);
+            showError(error.message);
+            document.getElementById('lastUpdate').textContent =
+                'Last updated: Error occurred';
+        }
+    }
+
+    // Initialize dashboard
+    document.addEventListener('DOMContentLoaded', function() {
+        initCharts();
+        refreshData();
+        setupAutoRefresh();
+
+        // Event listeners
+        document.getElementById('cityFilter').addEventListener('change', refreshData);
+        document.getElementById('refreshInterval').addEventListener('change', setupAutoRefresh);
+    });
+</script>
+</body>
+</html>
